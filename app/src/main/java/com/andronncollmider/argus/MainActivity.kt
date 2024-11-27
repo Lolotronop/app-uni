@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -41,8 +43,10 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults.topAppBarColors
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -51,8 +55,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -70,6 +76,7 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.media3.common.AudioAttributes
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.Log
 import androidx.media3.common.util.UnstableApi
@@ -91,7 +98,6 @@ import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 
 
-
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -111,59 +117,70 @@ class MainActivity : ComponentActivity() {
 //    }
 //}
 
+data class OutlinedObject(
+    val text: String,
+    val color: Color,
+    var x1: Float,
+    var y1: Float,
+    var x2: Float,
+    var y2: Float
+)
+
+data class Camera(val name: String, val uri: URI)
+
 class MainViewModel : ViewModel() {
-    private val _positions: MutableLiveData<List<List<Float>>> = MutableLiveData()
-    val positions: LiveData<List<List<Float>>> = _positions
+    private var _objects: MutableLiveData<MutableList<OutlinedObject>> =
+        MutableLiveData(mutableListOf())
+    val objects: LiveData<MutableList<OutlinedObject>> = _objects
 
-    private val _socketStatus = MutableLiveData(false)
-    val socketStatus: LiveData<Boolean> = _socketStatus
+    private val _cameras: MutableLiveData<List<Camera>> = MutableLiveData(listOf())
+    val cameras: LiveData<List<Camera>> = _cameras
 
-    private val _messages = MutableLiveData<Pair<Boolean, String>>()
-    val messages: LiveData<Pair<Boolean, String>> = _messages
+    private val COLORS = listOf(Color.Red, Color.Blue, Color.Green, Color.Blue)
 
     @androidx.annotation.OptIn(UnstableApi::class)
-    fun addMessage(message: Pair<Boolean, String>) = viewModelScope.launch(Dispatchers.Main) {
-        if (_socketStatus.value == true) {
-            val json = JSONObject(message.second)
-            val positionsObject = json.getJSONArray("positions")
-            val positions = mutableListOf<List<Float>>()
-            for (i in 0..<positionsObject.length()) {
-                val ar = positionsObject.getJSONArray(i)
-                val l = mutableListOf<Float>()
-                for (j in 0..<ar.length()) {
-                    l.add(ar.getDouble(j).toFloat())
-                }
-                positions.add(l)
+    fun updateObjects(text: String) = viewModelScope.launch(Dispatchers.Main) {
+        val json = JSONObject(text)
+        val objectsArray = json.getJSONArray("objects")
+        for (i in 0..<objectsArray.length()) {
+            val ob = objectsArray.getJSONObject(i)
+            val ar = ob.getJSONArray("bbox")
+            if (ar.length() < 4) {
+                throw Error("Input positions has less than 4 sides")
             }
-            Log.d("Test2", "$positions")
-
-            _messages.value = message
-            _positions.value = positions
+            if (_objects.value!!.size == i) {
+                Log.d("Test3", "Creating new object...")
+                _objects.value?.add(OutlinedObject("Car $i", COLORS[i % 4], 0f, 0f, 0f, 0f))
+            }
+            _objects.value!![i].x1 = ar.getDouble(0).toFloat()
+            _objects.value!![i].y1 = ar.getDouble(1).toFloat()
+            _objects.value!![i].x2 = ar.getDouble(2).toFloat()
+            _objects.value!![i].y2 = ar.getDouble(3).toFloat()
         }
-    }
-
-    fun setStatus(status: Boolean) = viewModelScope.launch(Dispatchers.Main) {
-        _socketStatus.value = status
+        val s = _objects.value!!.size
+        for (i in objectsArray.length()..<s) {
+            objects.value!!.removeAt(objectsArray.length())
+        }
+        _objects.value = _objects.value
     }
 }
 
 @androidx.annotation.OptIn(UnstableApi::class)
 open class WS(
     private val viewModel: MainViewModel
-): WebSocketListener() {
+) : WebSocketListener() {
 
     private val TAG = "Test"
 
     override fun onOpen(webSocket: WebSocket, response: Response) {
         super.onOpen(webSocket, response)
-        viewModel.setStatus(true)
         webSocket.send("Android Device Connected")
         Log.d(TAG, "onOpen:")
     }
 
     override fun onMessage(webSocket: WebSocket, text: String) {
         super.onMessage(webSocket, text)
-        viewModel.addMessage(Pair(false, text))
+        viewModel.updateObjects(text)
         Log.d(TAG, "onMessage: $text")
     }
 
@@ -174,7 +191,6 @@ open class WS(
 
     override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
         super.onClosed(webSocket, code, reason)
-        viewModel.setStatus(false)
         Log.d(TAG, "onClosed: $code $reason")
     }
 
@@ -185,14 +201,91 @@ open class WS(
 }
 
 @androidx.annotation.OptIn(UnstableApi::class)
+@Composable
+fun CameraDisplay(
+    modifier: Modifier = Modifier,
+    uri: String,
+    objectsState: State<MutableList<OutlinedObject>?>,
+    f: Boolean,
+    selectedObject: Int
+) {
+    // FIXME: this is the biggest hack of all time
+    if (f) {
+        Log.d("H", "H")
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(240.dp)
+            .background(MaterialTheme.colorScheme.secondaryContainer),
+        //                .background(MaterialTheme.colorScheme.error),
+    ) {
+        PlayerScreen(uri)
+
+        val textMeasurer = rememberTextMeasurer()
+        val objects = objectsState.value
+
+        val intervals = FloatArray(2)
+        intervals[0] = 10f
+        intervals[1] = 4f
+        var phase by remember { mutableFloatStateOf(0f) }
+        Canvas(modifier = Modifier.fillMaxSize(), onDraw = {
+            if (objects == null) {
+                Log.d("Test3", "Is null")
+            } else {
+                objects.forEachIndexed({ index, obj ->
+                    val x1 = obj.x1 * size.width
+                    val y1 = obj.y1 * size.height
+                    val x2 = obj.x2 * size.width
+                    val y2 = obj.y2 * size.height
+
+                    val path = Path()
+                    path.moveTo(x1, y1)
+                    path.lineTo(x2, y1)
+                    path.lineTo(x2, y2)
+                    path.lineTo(x1, y2)
+                    path.lineTo(x1, y1)
+                    path.close()
+
+                    if (index == selectedObject) {
+                        val effect = PathEffect.dashPathEffect(intervals = intervals, phase = phase)
+                        drawPath(path, obj.color, style = Stroke(width = 5f, pathEffect = effect))
+                        drawRect(obj.color.copy(0.2f), Offset(x1, y1), Size(x2 - x1, y2 - y1))
+                        phase = (phase + 0.3f) % 14
+                    } else {
+                        drawPath(path, obj.color, style = Stroke(width = 3f))
+                    }
+                    val measuredText = textMeasurer.measure(
+                        AnnotatedString(obj.text), style = TextStyle(fontSize = 14.sp)
+                    )
+                    val height = y2 - y1
+                    var offset = Offset(x1, y1 - measuredText.size.height)
+                    if (y1 - measuredText.size.height < 14) {
+                        offset = Offset(x1, y1 + height)
+                    }
+                    drawRect(
+                        Color.White, size = measuredText.size.toSize(), topLeft = offset
+                    )
+                    drawText(measuredText, topLeft = offset)
+                })
+            }
+        })
+    }
+
+}
+
+@androidx.annotation.OptIn(UnstableApi::class)
 @OptIn(ExperimentalMaterial3Api::class)
 @Preview
 @Composable
 fun App(modifier: Modifier = Modifier) {
-    val ddd = MainViewModel()
-    val sss = WS(ddd)
-    val client = OkHttpClient()
-    client.newWebSocket(Request.Builder().url("ws://10.0.2.2:3003").build(), sss)
+    val ddd = remember { MainViewModel() }
+    val sss = remember { WS(ddd) }
+    val objects = ddd.objects.observeAsState()
+    val client = remember { OkHttpClient() }
+    val emulUrl = "ws://10.0.2.2:3000"
+    val localUrl = "ws://192.168.31.12:3000"
+    var socket = client.newWebSocket(Request.Builder().url(localUrl).build(), sss)
     val cams = remember {
         mutableStateListOf(
             Camera(
@@ -204,12 +297,14 @@ fun App(modifier: Modifier = Modifier) {
                 URI("rtsp://admin:Video2023@109.195.69.236:3393/cam/realmonitor?channel=1&subtype=0")
             ),
             Camera(
-                "Camera 3", URI("rtsp://admin:Video2023@109.195.69.236:3393/cam/realmonitor?channel=1&subtype=0")
+                "Camera 3",
+                URI("rtsp://admin:Video2023@109.195.69.236:3393/cam/realmonitor?channel=1&subtype=0")
             ),
         )
     }
-    var selectedCamera by remember { mutableIntStateOf(1) }
+    var selectedCamera by remember { mutableIntStateOf(0) }
     var currentTab by remember { mutableIntStateOf(0) }
+    var selectedObject by remember { mutableIntStateOf(0) }
     val tabs = arrayOf("Cameras", "Objects", "Events")
 
     Scaffold(
@@ -219,14 +314,12 @@ fun App(modifier: Modifier = Modifier) {
                 FloatingActionButton(onClick = {
                     cams.add(
                         Camera(
-                            "New camera",
-                            URI("https://example.com")
+                            "New camera", URI("https://example.com")
                         )
                     )
                 }) {
                     Icon(
-                        Icons.Default.Add,
-                        contentDescription = "Add"
+                        Icons.Default.Add, contentDescription = "Add"
                     )
                 }
             }
@@ -243,78 +336,25 @@ fun App(modifier: Modifier = Modifier) {
         },
 //                    bottomBar = {Text(text="Ok now")}
     ) { innerPadding ->
-        val textMeasurer = rememberTextMeasurer()
-
         Column(modifier = Modifier.padding(innerPadding)) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(240.dp)
-                    .background(MaterialTheme.colorScheme.secondaryContainer),
-    //                .background(MaterialTheme.colorScheme.error),
-            ) {
-                PlayerScreen(cams[0].uri.toString())
-                val drawables = listOf(
-                    OutlinedObject("Car_1", Color.Red, listOf(0.5f, 0.5f, 0.2f, 0.3f)),
-                    OutlinedObject("Car_2", Color.Green, listOf(0.1f, 0.1f, 0.3f, 0.2f)),
-                    OutlinedObject("Car_3", Color.Blue, listOf(0.7f, 0.3f, 0.2f, 0.3f)),
-                )
-                val positions = ddd.positions.observeAsState()
-                val colors = listOf(Color.Red, Color.Green, Color.Blue)
-                Canvas(modifier = Modifier.fillMaxSize(), onDraw = {
-                    if (positions.value == null) {
-                        Log.d("Test2", "Is null")
-                    } else{
-                        for (i in 0..<positions.value!!.size) {
-                            val obj = OutlinedObject("Car_$i", colors[i], positions.value!!.get(i))
-                            val path = Path()
-//                        val x = size.width / 2 - size.width / 100
-//                        val y = size.height / 5 - size.width / 100
-//                        val width = size.width / 7
-//                        val heigth = size.height / 6
-                            val x = obj.points[0] * size.width
-                            val y = obj.points[1] * size.height
-                            val width = obj.points[2] * size.width
-                            val heigth = obj.points[3] * size.height
-                            path.moveTo(x, y)
-                            path.lineTo(x + width, y)
-                            path.lineTo(x + width, y + heigth)
-                            path.lineTo(x, y + heigth)
-                            path.lineTo(x, y)
-                            path.close()
-                            drawPath(path, obj.color, style = Stroke(width = 5f))
-                            val measuredText =
-                                textMeasurer.measure(
-                                    AnnotatedString(obj.text),
-                                    style = TextStyle(fontSize = 14.sp)
-                                )
-                            var offset = Offset(x, y - measuredText.size.height)
-                            if (y - measuredText.size.height < 14) {
-                                offset = Offset(x, y + heigth)
-                            }
-                            drawRect(Color.White, size = measuredText.size.toSize(), topLeft = offset)
-                            drawText(measuredText, topLeft = offset)
-
-                        }
-
-                    }
-                })
+            var flipflop by remember { mutableStateOf(false) }
+            ddd.objects.observeForever {
+                flipflop = !flipflop
             }
-
+            CameraDisplay(
+                uri = cams[0].uri.toString(),
+                objectsState = objects,
+                f = flipflop,
+                selectedObject = selectedObject
+            )
 
             TabRow(currentTab) {
                 tabs.forEachIndexed { index, title ->
-                    Tab(
-                        selected = currentTab == index,
-                        onClick = { currentTab = index },
-                        text = {
-                            Text(
-                                text = title,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    )
+                    Tab(selected = currentTab == index, onClick = { currentTab = index }, text = {
+                        Text(
+                            text = title, maxLines = 2, overflow = TextOverflow.Ellipsis
+                        )
+                    })
                 }
             }
 
@@ -322,35 +362,46 @@ fun App(modifier: Modifier = Modifier) {
                 0 -> {
                     Column {
                         cams.forEachIndexed { i, camera ->
-                            CameraListItem(
-                                name = camera.name,
+                            CameraListItem(name = camera.name,
                                 uri = camera.uri,
                                 selected = selectedCamera == i,
                                 updateName = { cams[i] = cams[i].copy(name = it) },
                                 deleteCamera = { cams.remove(camera) },
                                 updateURI = { cams[i] = cams[i].copy(uri = URI(it)) },
-                                onSelect = { selectedCamera = i }
-                            )
+                                onSelect = { selectedCamera = i })
                         }
                     }
                 }
 
                 1 -> {
-                    val colors = arrayOf(Color.Blue, Color.Red, Color.Green)
-                    var selectedObject by remember { mutableIntStateOf(0) }
-                    Column {
-                        colors.forEachIndexed { index, color ->
-                            Obj(
-                                color,
-                                selectedObject == index,
-                                "Obj $index",
-                                onSelect = { selectedObject = index })
+                    if (objects.value != null) {
+                        LazyColumn {
+                            itemsIndexed(objects.value!!.toList()) { index, obj ->
+                                Obj(
+                                    obj.color,
+                                    selectedObject == index,
+                                    "Car $index",
+                                    onSelect = { selectedObject = index })
+                            }
                         }
                     }
                 }
 
                 2 -> {
                     Column {
+                        var bewsocketUrl by remember { mutableStateOf("ws://192.168.31.12:3000") }
+                        TextField(
+                            value = bewsocketUrl,
+                            onValueChange = { bewsocketUrl = it },
+                            label = { Text("Bewsocket url") }
+                        )
+                        Button(onClick = {
+                            socket.close(1000, "No")
+                            socket = client.newWebSocket(
+                                Request.Builder().url(bewsocketUrl).build(),
+                                sss
+                            )
+                        }, content = { Text("Reconnect") })
                         Event("time", LocalDateTime.now())
                     }
                 }
@@ -359,7 +410,6 @@ fun App(modifier: Modifier = Modifier) {
     }
 }
 
-data class OutlinedObject(val text: String, val color: Color, val points: List<Float>)
 
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
@@ -368,14 +418,14 @@ fun PlayerScreen(uri: String) {
     val source: MediaSource =
         RtspMediaSource.Factory().setForceUseRtpTcp(true).createMediaSource(MediaItem.fromUri(uri))
     val exoPlayer = remember {
-        ExoPlayer.Builder(context)
-            .build().apply {
+        ExoPlayer.Builder(context).build().apply {
             playWhenReady = true
             setMediaSource(source)
             prepare()
         }
     }
-    Log.i("HHH","----Video player created")
+    exoPlayer.volume = 0f
+    Log.i("HHH", "----Video player created")
     VideoSurface(modifier = Modifier.fillMaxSize(), exoPlayer = exoPlayer)
 }
 
@@ -388,23 +438,19 @@ fun VideoSurface(modifier: Modifier = Modifier, exoPlayer: ExoPlayer) {
 //            player = exoPlayer
 //        }
 //    })
-    AndroidExternalSurface(
-        modifier = modifier,
-        onInit = {
-            onSurface { surface, _, _ ->
-                exoPlayer.setVideoSurface(surface)
-                Log.i("HHH", "------CREATED SURFACE")
-                surface.onDestroyed {
-                    exoPlayer.setVideoSurface(null)
-                    exoPlayer.release()
-                    Log.i( "HHH", "------Destroyed" )
-                }
+    AndroidExternalSurface(modifier = modifier, onInit = {
+        onSurface { surface, _, _ ->
+            exoPlayer.setVideoSurface(surface)
+            exoPlayer.play()
+            Log.i("HHH", "------CREATED SURFACE")
+            surface.onDestroyed {
+                exoPlayer.setVideoSurface(null)
+                Log.i("HHH", "------Destroyed")
             }
         }
-    )
+    })
 }
 
-data class Camera(val name: String, val uri: URI)
 
 @Composable
 fun ListItem(modifier: Modifier = Modifier, content: @Composable (RowScope.() -> Unit)) {
@@ -510,22 +556,16 @@ fun CameraDialog(
             shape = RoundedCornerShape(16.dp),
         ) {
             Column(
-                verticalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier
-                    .padding(8.dp)
+                verticalArrangement = Arrangement.SpaceBetween, modifier = Modifier.padding(8.dp)
             ) {
                 Column {
-                    TextField(
-                        value = tempName,
+                    TextField(value = tempName,
                         onValueChange = { tempName = it },
-                        label = { Text("Name") }
-                    )
+                        label = { Text("Name") })
 
-                    TextField(
-                        value = tempURI,
+                    TextField(value = tempURI,
                         onValueChange = { tempURI = it },
-                        label = { Text("URI") }
-                    )
+                        label = { Text("URI") })
                 }
                 Row(
                     modifier = Modifier
@@ -534,8 +574,7 @@ fun CameraDialog(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Button(
-                        onClick = { deleteCamera() },
-                        colors = ButtonColors(
+                        onClick = { deleteCamera() }, colors = ButtonColors(
                             containerColor = MaterialTheme.colorScheme.error,
                             contentColor = MaterialTheme.colorScheme.onError,
                             disabledContainerColor = MaterialTheme.colorScheme.errorContainer,
@@ -549,13 +588,11 @@ fun CameraDialog(
                     }
                     Row {
                         TextButton(onClick = { onDismissRequest() }) { Text("Close") }
-                        TextButton(
-                            onClick = {
-                                updateName(tempName)
-                                updateURI(tempURI)
-                                onDismissRequest()
-                            }
-                        ) {
+                        TextButton(onClick = {
+                            updateName(tempName)
+                            updateURI(tempURI)
+                            onDismissRequest()
+                        }) {
                             Text(
                                 "Save"
                             )
@@ -569,9 +606,7 @@ fun CameraDialog(
 
 @Composable
 fun Event(
-    name: String,
-    time: LocalDateTime,
-    modifier: Modifier = Modifier
+    name: String, time: LocalDateTime, modifier: Modifier = Modifier
 ) {
     ListItem(modifier) {
         Column {
