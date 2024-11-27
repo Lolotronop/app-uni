@@ -46,7 +46,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.media3.common.util.Log
 import androidx.media3.common.util.UnstableApi
 import com.andronncollmider.argus.ui.theme.MyApplicationTheme
 import java.net.URI
@@ -74,24 +73,18 @@ const val LOCAL_WS = "ws://192.168.31.12:3000"
 @Preview
 @Composable
 fun App(modifier: Modifier = Modifier) {
+    val TAG = "App"
     val viewModel = remember { MainViewModel() }
     val socket = remember { ObjectWebsocket(viewModel) }
-    val objects = viewModel.objects.observeAsState()
-    val cams by viewModel.cameras.observeAsState(mutableListOf())
     socket.connect(LOCAL_WS)
+
+    val objects by viewModel.objects.observeAsState(mutableListOf())
+    val cams by viewModel.cameras.observeAsState(mutableListOf())
 
     var selectedCamera by remember { mutableIntStateOf(0) }
     var currentTab by remember { mutableIntStateOf(0) }
     var selectedObject by remember { mutableIntStateOf(0) }
     val tabs = rememberSaveable { arrayOf("Cameras", "Objects", "Events") }
-
-    var flipflop by remember { mutableStateOf(false) }
-    remember {
-        viewModel.objects.observeForever {
-            flipflop = !flipflop
-        }
-        0
-    }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -118,8 +111,7 @@ fun App(modifier: Modifier = Modifier) {
         Column(modifier = Modifier.padding(innerPadding)) {
             VideoFeed(
                 uri = cams[0].uri.toString(),
-                objectsState = objects,
-                f = flipflop,
+                objects = objects,
                 selectedObject = selectedObject
             )
 
@@ -141,14 +133,12 @@ fun App(modifier: Modifier = Modifier) {
                 }
 
                 1 -> {
-                    if (objects.value != null) {
-                        LazyColumn {
-                            itemsIndexed(objects.value!!.toList()) { index, obj ->
-                                ObjectListItem(obj.color,
-                                    selectedObject == index,
-                                    "Car $index",
-                                    onSelect = { selectedObject = index })
-                            }
+                    LazyColumn {
+                        itemsIndexed(objects.toList()) { index, obj ->
+                            ObjectListItem(obj.color,
+                                selectedObject == index,
+                                obj.text,
+                                onSelect = { selectedObject = index })
                         }
                     }
                 }

@@ -5,13 +5,9 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.media3.common.util.Log
 import androidx.media3.common.util.UnstableApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import okhttp3.Response
-import okhttp3.WebSocket
-import okhttp3.WebSocketListener
 import org.json.JSONObject
 import java.net.URI
 
@@ -29,6 +25,7 @@ data class Camera(val name: String, val uri: URI)
 val COLORS = listOf(Color.Red, Color.Blue, Color.Green, Color.Blue)
 
 class MainViewModel : ViewModel() {
+    private val TAG = "ViewModel"
     private var _objects: MutableLiveData<MutableList<DetectedObject>> =
         MutableLiveData(mutableListOf())
     val objects: LiveData<MutableList<DetectedObject>> = _objects
