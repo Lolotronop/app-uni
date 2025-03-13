@@ -43,7 +43,8 @@ fun VideoFeed(
     modifier: Modifier = Modifier,
     uri: String,
     objects: MutableList<DetectedObject>?,
-    selectedObject: Int
+    selectedObject: Int,
+    displayNames: Boolean
 ) {
     // FIXME: this is the biggest hack of all time
     Box(
@@ -94,8 +95,10 @@ fun VideoFeed(
                 if (y1 - measuredText.size.height < 14) {
                     offset = Offset(x1, y1 + height)
                 }
-                drawRect(Color.White, offset, measuredText.size.toSize())
-                drawText(measuredText, Color.Black, offset)
+                if (displayNames) {
+                    drawRect(Color.White, offset, measuredText.size.toSize())
+                    drawText(measuredText, Color.Black, offset)
+                }
             }
         })
     }
@@ -117,7 +120,8 @@ fun PlayerScreen(uri: String) {
     }
     exoPlayer.volume = 0f
     Log.i("HHH", "----Video player created")
-    VideoSurface(modifier = Modifier.fillMaxSize(), exoPlayer = exoPlayer)
+    Log.d("HHH", "${exoPlayer.videoSize.height.dp}")
+    VideoSurface(modifier = Modifier.fillMaxWidth(), exoPlayer = exoPlayer)
 }
 
 @androidx.annotation.OptIn(UnstableApi::class)

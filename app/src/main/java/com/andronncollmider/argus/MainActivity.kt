@@ -1,6 +1,7 @@
 package com.andronncollmider.argus
 
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -46,9 +47,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.zIndex
 import androidx.media3.common.util.UnstableApi
 import com.andronncollmider.argus.ui.theme.MyApplicationTheme
-import java.net.URI
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
@@ -65,8 +68,9 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-const val EMUL_WS = "ws://10.0.2.2:3000"
-const val LOCAL_WS = "ws://192.168.31.12:3000"
+const val HOST = "10.0.2.2" //  192.168.31.12 -- localhost machine 10.0.2.2 -- emulator to host
+const val WS_ADRESS = "ws://$HOST:3000"
+const val API_URL = "http://$HOST:8080"
 
 @androidx.annotation.OptIn(UnstableApi::class)
 @OptIn(ExperimentalMaterial3Api::class)
@@ -74,26 +78,58 @@ const val LOCAL_WS = "ws://192.168.31.12:3000"
 @Composable
 fun App(modifier: Modifier = Modifier) {
     val TAG = "App"
+
     val viewModel = remember { MainViewModel() }
+    viewModel.apiBase = API_URL
     val socket = remember { ObjectWebsocket(viewModel) }
-    socket.connect(LOCAL_WS)
+    socket.connect(WS_ADRESS)
 
     val objects by viewModel.objects.observeAsState(mutableListOf())
     val cams by viewModel.cameras.observeAsState(mutableListOf())
 
+    viewModel.fetchCars()
+
     var selectedCamera by remember { mutableIntStateOf(0) }
     var currentTab by remember { mutableIntStateOf(0) }
     var selectedObject by remember { mutableIntStateOf(0) }
-    val tabs = rememberSaveable { arrayOf("Cameras", "Objects", "Events") }
+    val tabs = rememberSaveable { arrayOf("Камеры", "Объекты", "События") }
+
+    var displayNames by remember { mutableStateOf(true) }
+
+    var showDevMenu by rememberSaveable { mutableStateOf(false) }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         floatingActionButton = {
             if (currentTab == 0) {
                 FloatingActionButton(onClick = {
-                    cams.add(Camera("New camera", URI("https://example.com")))
+                    viewModel.addCamera()
                 }) {
                     Icon(Icons.Default.Add, contentDescription = "Add")
+                }
+            } else if (currentTab == 1) {
+                var isObserved by remember { mutableStateOf(false) }
+                try {
+                    val objId = viewModel.objects.value?.get(selectedObject)!!.id
+                    isObserved = viewModel.observedObjects.value?.contains(objId) == true
+                } catch (e: IndexOutOfBoundsException) {
+                    Log.d("MAIN", "no cars?")
+                }
+                Log.d("MAIN", "$isObserved isObserved")
+                FloatingActionButton(onClick = {
+                    if (isObserved) {
+                        viewModel.removeObservedObject(selectedObject)
+                        isObserved = false
+                    } else {
+                        viewModel.setObservedObject(selectedObject)
+                        isObserved = true
+                    }
+                }) {
+                    if (isObserved) {
+                        Text("D")
+                    } else {
+                        Text("O")
+                    }
                 }
             }
         },
@@ -103,16 +139,65 @@ fun App(modifier: Modifier = Modifier) {
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     titleContentColor = MaterialTheme.colorScheme.primary
                 ),
-                modifier = Modifier.fillMaxWidth(),
-                title = { Text("Argus") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { showDevMenu = true },
+                title = {
+                    Text(text = viewModel.cameras.value?.get(selectedCamera)?.name ?: "Argus")
+                },
             )
         },
     ) { innerPadding ->
+
+        var bewsocketUrl by rememberSaveable { mutableStateOf("ws://192.168.31.12:3000") }
+        var api_url by rememberSaveable { mutableStateOf(API_URL) }
+        var login by rememberSaveable { mutableStateOf("artmexbet") }
+        if (showDevMenu) {
+            Dialog(
+                onDismissRequest = { showDevMenu = false },
+                properties = DialogProperties(
+                    dismissOnBackPress = true,
+                    dismissOnClickOutside = true
+                ),
+            ) {
+                Column {
+                    TextField(value = bewsocketUrl,
+                        onValueChange = { bewsocketUrl = it },
+                        label = { Text("Bewsocket url") })
+                    Button(onClick = { socket.connect(bewsocketUrl) }) {
+                        Text("Reconnect")
+                    }
+                    TextField(value = api_url,
+                        onValueChange = { api_url = it },
+                        label = { Text("API url") })
+                    Button(onClick = { viewModel.apiBase = api_url }) {
+                        Text("Set api url")
+                    }
+
+                    TextField(value = login,
+                        onValueChange = { login = it },
+                        label = { Text("Login") })
+                    Button(onClick = { viewModel.login = login }) {
+                        Text("Set login")
+                    }
+                    Button(onClick = { displayNames = !displayNames }) {
+                        Text("Display names")
+                    }
+                    Button(onClick = { viewModel.fetchCars() }) {
+                        Text("Fetch observed cars")
+                    }
+
+                    Event("time", LocalDateTime.now())
+                }
+            }
+        }
+
         Column(modifier = Modifier.padding(innerPadding)) {
             VideoFeed(
                 uri = cams[0].uri.toString(),
                 objects = objects,
-                selectedObject = selectedObject
+                selectedObject = selectedObject,
+                displayNames = displayNames
             )
 
             TabRow(currentTab) {
@@ -124,35 +209,58 @@ fun App(modifier: Modifier = Modifier) {
                     })
                 }
             }
+            Column(modifier = Modifier.zIndex(10f)) {
+                when (currentTab) {
+                    0 -> {
+                        CameraTab(cameras = cams,
+                            selectedCamera = selectedCamera,
+                            onSelect = { selectedCamera = it })
+                    }
 
-            when (currentTab) {
-                0 -> {
-                    CameraTab(cameras = cams,
-                        selectedCamera = selectedCamera,
-                        onSelect = { selectedCamera = it })
-                }
+                    1 -> {
+                        var showObserved by rememberSaveable { mutableStateOf(true) }
+                        Column(
+                            modifier = Modifier
+                                .clickable { showObserved = !showObserved }
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp)
+                        ) {
+                            val text = "На наблюдении (${viewModel.observedObjects.value?.size})"
+                            val arrow = if (showObserved) "v" else ">"
+                            Text(
+                                "$text $arrow"
+                            )
+                        }
+                        if (showObserved) {
+                            LazyColumn {
+                                itemsIndexed(objects!!.toList()) { index, obj ->
+                                    if (viewModel.observedObjects.value?.contains(obj.id) == true) {
+                                        ObjectListItem(obj.color,
+                                            selectedObject == index,
+                                            obj.text,
+                                            onSelect = { selectedObject = index })
 
-                1 -> {
-                    LazyColumn {
-                        itemsIndexed(objects.toList()) { index, obj ->
-                            ObjectListItem(obj.color,
-                                selectedObject == index,
-                                obj.text,
-                                onSelect = { selectedObject = index })
+                                    }
+                                }
+                            }
+                        }
+                        Text(
+                            "Машины",
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                        )
+                        LazyColumn {
+                            itemsIndexed(objects!!.toList()) { index, obj ->
+                                if (viewModel.observedObjects.value?.contains(obj.id) != true) {
+                                    ObjectListItem(obj.color,
+                                        selectedObject == index,
+                                        obj.text,
+                                        onSelect = { selectedObject = index })
+                                }
+                            }
                         }
                     }
-                }
 
-                2 -> {
-                    Column {
-                        var bewsocketUrl by rememberSaveable { mutableStateOf("ws://192.168.31.12:3000") }
-                        TextField(value = bewsocketUrl,
-                            onValueChange = { bewsocketUrl = it },
-                            label = { Text("Bewsocket url") })
-                        Button(onClick = { socket.connect(bewsocketUrl) }) {
-                            Text("Reconnect")
-                        }
-                        Event("time", LocalDateTime.now())
+                    2 -> {
                     }
                 }
             }
