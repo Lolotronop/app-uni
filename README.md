@@ -1,4 +1,5 @@
-build insctructions
+build instructions:
+Install java 23
 ```bash
 ./gradlew assembleDebug
 ```
