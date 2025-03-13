@@ -1,12 +1,11 @@
 package com.andronncollmider.argus
 
-import androidx.compose.foundation.AndroidExternalSurface
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -28,12 +27,14 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.toSize
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.Log
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.rtsp.RtspMediaSource
 import androidx.media3.exoplayer.source.MediaSource
+import androidx.media3.ui.PlayerView
 
 const val TAG = "VideoFeed"
 
@@ -50,7 +51,8 @@ fun VideoFeed(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(240.dp)
+            .heightIn(min = 20.dp, max = 230.dp)
+//            .height(220.dp)
             .background(MaterialTheme.colorScheme.secondaryContainer),
         //                .background(MaterialTheme.colorScheme.error),
     ) {
@@ -128,21 +130,21 @@ fun PlayerScreen(uri: String) {
 @Composable
 fun VideoSurface(modifier: Modifier = Modifier, exoPlayer: ExoPlayer) {
     // TODO: test if this actually works
-//    AndroidView(factory = { context ->
-//        PlayerView(context).apply {
-//            player = exoPlayer
+    AndroidView(factory = { context ->
+        PlayerView(context).apply {
+            player = exoPlayer
+        }
+    }, modifier = Modifier.fillMaxWidth())
+//    AndroidExternalSurface(modifier = modifier, onInit = {
+//        onSurface { surface, _, _ ->
+//            exoPlayer.setVideoSurface(surface)
+//            exoPlayer.play()
+//            Log.i("HHH", "------CREATED SURFACE")
+//            surface.onDestroyed {
+//                exoPlayer.setVideoSurface(null)
+//                Log.i("HHH", "------Destroyed")
+//            }
 //        }
 //    })
-    AndroidExternalSurface(modifier = modifier, onInit = {
-        onSurface { surface, _, _ ->
-            exoPlayer.setVideoSurface(surface)
-            exoPlayer.play()
-            Log.i("HHH", "------CREATED SURFACE")
-            surface.onDestroyed {
-                exoPlayer.setVideoSurface(null)
-                Log.i("HHH", "------Destroyed")
-            }
-        }
-    })
 }
 

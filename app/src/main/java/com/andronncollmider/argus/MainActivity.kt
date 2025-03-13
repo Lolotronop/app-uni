@@ -6,6 +6,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -19,19 +20,23 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults.topAppBarColors
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
@@ -44,6 +49,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -52,6 +59,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.zIndex
 import androidx.media3.common.util.UnstableApi
 import com.andronncollmider.argus.ui.theme.MyApplicationTheme
+import java.net.URI
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
@@ -97,13 +105,23 @@ fun App(modifier: Modifier = Modifier) {
     var displayNames by remember { mutableStateOf(true) }
 
     var showDevMenu by rememberSaveable { mutableStateOf(false) }
+    var showCameraEdit by rememberSaveable { mutableStateOf(false) }
+    if (showCameraEdit) {
+        CameraEditScreen(
+            uri = viewModel.cameras.value?.get(0)?.uri!!,
+            name = viewModel.cameras.value?.get(0)?.name!!,
+            onSave = { name, uri -> showCameraEdit = false },
+            onCancel = { showCameraEdit = false })
+        return
+    }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         floatingActionButton = {
             if (currentTab == 0) {
                 FloatingActionButton(onClick = {
-                    viewModel.addCamera()
+//                    viewModel.addCamera()
+                    showCameraEdit = true
                 }) {
                     Icon(Icons.Default.Add, contentDescription = "Add")
                 }
@@ -214,7 +232,9 @@ fun App(modifier: Modifier = Modifier) {
                     0 -> {
                         CameraTab(cameras = cams,
                             selectedCamera = selectedCamera,
-                            onSelect = { selectedCamera = it })
+                            onSelect = { selectedCamera = it },
+                            onEdit = {id -> showCameraEdit = true}
+                        )
                     }
 
                     1 -> {
@@ -248,21 +268,113 @@ fun App(modifier: Modifier = Modifier) {
                             "Машины",
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                         )
-                        LazyColumn {
-                            itemsIndexed(objects!!.toList()) { index, obj ->
-                                if (viewModel.observedObjects.value?.contains(obj.id) != true) {
-                                    ObjectListItem(obj.color,
-                                        selectedObject == index,
-                                        obj.text,
-                                        onSelect = { selectedObject = index })
-                                }
-                            }
-                        }
+//                        LazyColumn {
+//                            itemsIndexed(objects!!.toList()) { index, obj ->
+//                                if (viewModel.observedObjects.value?.contains(obj.id) != true) {
+//                                    ObjectListItem(obj.color,
+//                                        selectedObject == index,
+//                                        obj.text,
+//                                        onSelect = { selectedObject = index })
+//                                }
+//                            }
+//                        }
+                        ObjectListItem(Color.Red,
+                            true,
+                            "Object 1",
+                            onSelect = { })
                     }
 
                     2 -> {
+                        Column(
+                            modifier = Modifier
+                                .padding(horizontal = 16.dp, vertical = 8.dp)
+                        ) {
+                            Event(name = "Event", time = LocalDateTime.now())
+                        }
                     }
                 }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CameraEditScreen(
+    modifier: Modifier = Modifier,
+    onSave: (name: String, uri: String) -> Unit,
+    onCancel: () -> Unit,
+    name: String,
+    uri: URI,
+) {
+    val sheetState = rememberModalBottomSheetState()
+    var showBottomSheet by remember { mutableStateOf(true) }
+    var tempName by remember { mutableStateOf("") }
+    var tempURI by remember { mutableStateOf("") }
+    tempURI = uri.toString()
+    tempName = name
+    Scaffold(
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = {
+                    showBottomSheet = true
+                }
+            ) {
+                Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "")
+            }
+        }
+    ) { contentPadding ->
+        Image(
+            painter = painterResource(id = R.drawable.map),
+            contentDescription = "map",
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(contentPadding),
+            contentScale = ContentScale.FillHeight,
+        )
+
+        if (showBottomSheet) {
+            ModalBottomSheet(
+                onDismissRequest = {
+                    showBottomSheet = false
+                },
+                sheetState = sheetState,
+                modifier = modifier
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+
+                    TextField(
+                        modifier = Modifier.fillMaxWidth(),
+                        value = tempName,
+                        onValueChange = { tempName = it },
+                        label = { Text("Name") })
+
+                    TextField(
+                        modifier = Modifier.fillMaxWidth(),
+                        value = tempURI,
+                        onValueChange = { tempURI = it },
+                        label = { Text("URI") })
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 16.dp, horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        TextButton(onClick = { onCancel() }) { Text("Cancel") }
+                        Button(onClick = {
+                            onSave(tempName, tempURI)
+                        }) {
+                            Text(
+                                "Save"
+                            )
+                        }
+                    }
+                }
+
             }
         }
     }

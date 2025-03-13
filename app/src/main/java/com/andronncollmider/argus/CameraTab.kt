@@ -41,7 +41,8 @@ fun CameraTab(
     modifier: Modifier = Modifier,
     cameras: MutableList<Camera>,
     selectedCamera: Int,
-    onSelect: (Int) -> Unit
+    onSelect: (Int) -> Unit,
+    onEdit: (Int) -> Unit
 ) {
     LazyColumn(modifier) {
         itemsIndexed(cameras) { i, camera ->
@@ -52,7 +53,8 @@ fun CameraTab(
                 updateName = { cameras[i] = cameras[i].copy(name = it) },
                 deleteCamera = { cameras.remove(camera) },
                 updateURI = { cameras[i] = cameras[i].copy(uri = URI(it)) },
-                onSelect = {onSelect(i)}
+                onSelect = {onSelect(i)},
+                onEdit = {onEdit(i)}
             )
         }
     }
@@ -67,20 +69,21 @@ fun CameraListItem(
     updateName: (String) -> Unit,
     updateURI: (String) -> Unit,
     deleteCamera: () -> Unit,
+    onEdit: () -> Unit,
     onSelect: () -> Unit
 ) {
     var showDialog by remember { mutableStateOf(false) }
 
-    if (showDialog) {
-        CameraDialog(
-            name = name,
-            uri = uri,
-            onDismissRequest = { showDialog = false },
-            updateName = { updateName(it) },
-            updateURI = { updateURI(it) },
-            deleteCamera = { deleteCamera() },
-        )
-    }
+//    if (showDialog) {
+//        CameraDialog(
+//            name = name,
+//            uri = uri,
+//            onDismissRequest = { showDialog = false },
+//            updateName = { updateName(it) },
+//            updateURI = { updateURI(it) },
+//            deleteCamera = { deleteCamera() },
+//        )
+//    }
 
     ListItem(modifier.clickable { onSelect() }) {
         Row(
@@ -89,7 +92,7 @@ fun CameraListItem(
             RadioButton(selected, onClick = { onSelect() })
             Text(name)
         }
-        IconButton(onClick = { showDialog = true }) {
+        IconButton(onClick = { onEdit() }) {
             Icon(
                 Icons.Rounded.Settings,
                 contentDescription = "Open camera settings",
