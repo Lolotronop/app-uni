@@ -1,6 +1,8 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.compose.compiler)
+    id("com.google.devtools.ksp")
 }
 
 android {
@@ -66,7 +68,9 @@ dependencies {
     implementation(libs.androidx.media3.exoplayer.dash)
     implementation(libs.okhttp)
     implementation(libs.androidx.runtime.livedata)
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.4.1")
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.room.runtime)
+    ksp(libs.androidx.room.compiler)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

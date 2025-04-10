@@ -50,6 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -87,7 +88,8 @@ const val API_URL = "http://$HOST:8080"
 fun App(modifier: Modifier = Modifier) {
     val TAG = "App"
 
-    val viewModel = remember { MainViewModel() }
+    val context = LocalContext.current
+    val viewModel = remember { MainViewModel(context) }
     viewModel.apiBase = API_URL
     val socket = remember { ObjectWebsocket(viewModel) }
     socket.connect(WS_ADRESS)
@@ -108,10 +110,20 @@ fun App(modifier: Modifier = Modifier) {
     var showCameraEdit by rememberSaveable { mutableStateOf(false) }
     if (showCameraEdit) {
         CameraEditScreen(
-            uri = viewModel.cameras.value?.get(0)?.uri!!,
-            name = viewModel.cameras.value?.get(0)?.name!!,
-            onSave = { name, uri -> showCameraEdit = false },
-            onCancel = { showCameraEdit = false })
+            uri = cams[selectedCamera].uri,
+            name = cams[selectedCamera].name,
+            onSave = { name, uri ->
+                cams[selectedCamera] = cams[selectedCamera].copy(name = name, uri = URI(uri))
+                viewModel.updateCamera(cams[selectedCamera])
+                showCameraEdit = false
+            },
+            onCancel = { showCameraEdit = false },
+            onDelete = {
+                viewModel.deleteCamera(cams[selectedCamera])
+                selectedCamera = minOf(0, selectedCamera - 1)
+                showCameraEdit = false
+            }
+        )
         return
     }
 
@@ -120,7 +132,8 @@ fun App(modifier: Modifier = Modifier) {
         floatingActionButton = {
             if (currentTab == 0) {
                 FloatingActionButton(onClick = {
-//                    viewModel.addCamera()
+                    viewModel.addCamera()
+                    selectedCamera = viewModel.cameras.value!!.size - 1
                     showCameraEdit = true
                 }) {
                     Icon(Icons.Default.Add, contentDescription = "Add")
@@ -161,7 +174,12 @@ fun App(modifier: Modifier = Modifier) {
                     .fillMaxWidth()
                     .clickable { showDevMenu = true },
                 title = {
-                    Text(text = viewModel.cameras.value?.get(selectedCamera)?.name ?: "Argus")
+                    Text(
+                        text = cams.getOrElse(
+                            selectedCamera,
+                            { _ -> Camera(name = "huh", uri = URI("http://example.com")) })?.name
+                            ?: "Argus"
+                    )
                 },
             )
         },
@@ -179,20 +197,23 @@ fun App(modifier: Modifier = Modifier) {
                 ),
             ) {
                 Column {
-                    TextField(value = bewsocketUrl,
+                    TextField(
+                        value = bewsocketUrl,
                         onValueChange = { bewsocketUrl = it },
                         label = { Text("Bewsocket url") })
                     Button(onClick = { socket.connect(bewsocketUrl) }) {
                         Text("Reconnect")
                     }
-                    TextField(value = api_url,
+                    TextField(
+                        value = api_url,
                         onValueChange = { api_url = it },
                         label = { Text("API url") })
                     Button(onClick = { viewModel.apiBase = api_url }) {
                         Text("Set api url")
                     }
 
-                    TextField(value = login,
+                    TextField(
+                        value = login,
                         onValueChange = { login = it },
                         label = { Text("Login") })
                     Button(onClick = { viewModel.login = login }) {
@@ -212,7 +233,14 @@ fun App(modifier: Modifier = Modifier) {
 
         Column(modifier = Modifier.padding(innerPadding)) {
             VideoFeed(
-                uri = cams[0].uri.toString(),
+                uri = cams.getOrElse(
+                    0,
+                    { _ ->
+                        Camera(
+                            name = "huh",
+                            uri = URI("rtsp://admin:Video2023@109.195.69.236:3393/cam/realmonitor?channel=1&subtype=0")
+                        )
+                    }).uri.toString(),
                 objects = objects,
                 selectedObject = selectedObject,
                 displayNames = displayNames
@@ -230,10 +258,14 @@ fun App(modifier: Modifier = Modifier) {
             Column(modifier = Modifier.zIndex(10f)) {
                 when (currentTab) {
                     0 -> {
-                        CameraTab(cameras = cams,
+                        CameraTab(
+                            cameras = cams,
                             selectedCamera = selectedCamera,
                             onSelect = { selectedCamera = it },
-                            onEdit = {id -> showCameraEdit = true}
+                            onEdit = { id ->
+                                showCameraEdit = true
+                                selectedCamera = id
+                            }
                         )
                     }
 
@@ -255,7 +287,8 @@ fun App(modifier: Modifier = Modifier) {
                             LazyColumn {
                                 itemsIndexed(objects!!.toList()) { index, obj ->
                                     if (viewModel.observedObjects.value?.contains(obj.id) == true) {
-                                        ObjectListItem(obj.color,
+                                        ObjectListItem(
+                                            obj.color,
                                             selectedObject == index,
                                             obj.text,
                                             onSelect = { selectedObject = index })
@@ -278,7 +311,8 @@ fun App(modifier: Modifier = Modifier) {
 //                                }
 //                            }
 //                        }
-                        ObjectListItem(Color.Red,
+                        ObjectListItem(
+                            Color.Red,
                             true,
                             "Object 1",
                             onSelect = { })
@@ -303,6 +337,7 @@ fun App(modifier: Modifier = Modifier) {
 fun CameraEditScreen(
     modifier: Modifier = Modifier,
     onSave: (name: String, uri: String) -> Unit,
+    onDelete: () -> Unit,
     onCancel: () -> Unit,
     name: String,
     uri: URI,
@@ -365,6 +400,7 @@ fun CameraEditScreen(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         TextButton(onClick = { onCancel() }) { Text("Cancel") }
+                        TextButton(onClick = { onDelete() }) { Text("Delete") }
                         Button(onClick = {
                             onSave(tempName, tempURI)
                         }) {

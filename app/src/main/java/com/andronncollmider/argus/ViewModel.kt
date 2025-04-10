@@ -1,14 +1,29 @@
 package com.andronncollmider.argus
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.util.Log
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.util.UnstableApi
+import androidx.room.ColumnInfo
+import androidx.room.Dao
+import androidx.room.Database
+import androidx.room.Delete
+import androidx.room.Entity
+import androidx.room.Insert
+import androidx.room.PrimaryKey
+import androidx.room.Query
+import androidx.room.Room
+import androidx.room.RoomDatabase
+import androidx.room.TypeConverter
+import androidx.room.TypeConverters
+import androidx.room.Update
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import okhttp3.Headers
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
@@ -25,14 +40,58 @@ import kotlin.concurrent.thread
 import kotlin.math.abs
 
 data class DetectedObject(
-    val id: Int, val text: String, val color: Color, var x1: Float, var y1: Float, var x2: Float, var y2: Float
+    val id: Int,
+    val text: String,
+    val color: Color,
+    var x1: Float,
+    var y1: Float,
+    var x2: Float,
+    var y2: Float
 )
 
-data class Camera(val name: String, val uri: URI)
+@Entity
+data class Camera(
+    @PrimaryKey(autoGenerate = true) val uid: Int = 0,
+    @ColumnInfo(name = "name") val name: String,
+    @ColumnInfo(name = "uri") val uri: URI
+)
+
+@Dao
+interface CameraDao {
+    @Query("select * from camera")
+    fun getAll(): List<Camera>
+
+    @Insert
+    fun insertAll(vararg cameras: Camera)
+
+    @Delete
+    fun delete(user: Camera)
+
+    @Update
+    fun update(camera: Camera)
+}
+class UriConverters {
+    @TypeConverter
+    fun fromUriToString(uri: URI): String {
+        return uri.toString() // Uri to String
+    }
+
+    @TypeConverter
+    fun fromStringToUri(string: String): URI {
+        return URI.create(string)
+    }
+}
+
+
+@Database(entities = [Camera::class], version = 1)
+@TypeConverters(UriConverters::class)
+abstract class AppDatabase : RoomDatabase() {
+    abstract fun cameraDao(): CameraDao
+}
 
 val COLORS = listOf(Color.Red, Color.Blue, Color.Green, Color.Blue)
 
-class MainViewModel : ViewModel() {
+class MainViewModel(context: Context) : ViewModel() {
     private val TAG = "ViewModel"
 
     //    private var _objects: MutableLiveData<MutableList<DetectedObject>> =
@@ -44,30 +103,45 @@ class MainViewModel : ViewModel() {
     var apiBase = ""
     var login = "artmexbet"
 
-    private val _cameras: MutableLiveData<MutableList<Camera>> = MutableLiveData(
-        mutableListOf(
-            Camera(
-                "Camera 1",
-                URI("rtsp://admin:Video2023@109.195.69.236:3393/cam/realmonitor?channel=1&subtype=0")
-            ),
-            Camera(
-                "Camera 2",
-                URI("rtsp://admin:Video2023@109.195.69.236:3393/cam/realmonitor?channel=1&subtype=0")
-            ),
-            Camera(
-                "Camera 3",
-                URI("rtsp://admin:Video2023@109.195.69.236:3393/cam/realmonitor?channel=1&subtype=0")
-            ),
-        )
-    )
-    val cameras: MutableLiveData<MutableList<Camera>> = _cameras
-    fun addCamera() = viewModelScope.launch(Dispatchers.Main) {
-        _cameras.value?.add(Camera("New camera", URI("https://example.com")))
-        _cameras.postValue(_cameras.value)
+    val db = Room.databaseBuilder(
+        context.applicationContext,
+        AppDatabase::class.java, "database-name"
+    ).build()
+
+    private val _cameras: MutableLiveData<MutableList<Camera>> = MutableLiveData(mutableListOf())
+
+    init {
+        viewModelScope.launch {
+            val cams = withContext(Dispatchers.IO) {
+                db.cameraDao().getAll().toMutableList()
+            }
+            _cameras.value = cams
+            _cameras.postValue(cams)
+        }
     }
 
+    val cameras: MutableLiveData<MutableList<Camera>> = _cameras
+    fun addCamera() {
+        val cam = Camera(name = "New camera", uri = URI("https://example.com"))
+        _cameras.value?.add(cam)
+        _cameras.postValue(_cameras.value)
+        viewModelScope.launch(Dispatchers.IO) {
+            db.cameraDao().insertAll(cam)
+        }
+    }
+
+    fun updateCamera(cam: Camera) = viewModelScope.launch(Dispatchers.IO) {
+        db.cameraDao().update(cam)
+    }
+
+    fun deleteCamera(cam: Camera) = viewModelScope.launch(Dispatchers.IO) {
+        _cameras.value?.remove(cam)
+        db.cameraDao().delete(cam)
+    }
+
+
     @SuppressLint("DefaultLocale")
-    fun setObservedObject(index: Int)  {
+    fun setObservedObject(index: Int) {
         val client = OkHttpClient()
         val obj = objects.value?.get(index)
         if (obj === null) {
@@ -116,7 +190,7 @@ class MainViewModel : ViewModel() {
     }
 
     @SuppressLint("DefaultLocale")
-    fun removeObservedObject(index: Int)  {
+    fun removeObservedObject(index: Int) {
         val client = OkHttpClient()
         val obj = objects.value?.get(index)
         if (obj === null) {

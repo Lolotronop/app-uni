@@ -133,6 +133,9 @@ fun VideoSurface(modifier: Modifier = Modifier, exoPlayer: ExoPlayer) {
     AndroidView(factory = { context ->
         PlayerView(context).apply {
             player = exoPlayer
+            controllerAutoShow = false
+            hideController()
+            useController = false
         }
     }, modifier = Modifier.fillMaxWidth())
 //    AndroidExternalSurface(modifier = modifier, onInit = {
