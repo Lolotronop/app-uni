@@ -31,6 +31,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import org.osmdroid.util.GeoPoint
 import java.net.URI
 import java.time.Instant
 import java.util.Calendar
@@ -53,7 +54,8 @@ data class DetectedObject(
 data class Camera(
     @PrimaryKey(autoGenerate = true) val uid: Int = 0,
     @ColumnInfo(name = "name") val name: String,
-    @ColumnInfo(name = "uri") val uri: URI
+    @ColumnInfo(name = "uri") val uri: URI,
+    @ColumnInfo(name = "point") val point: GeoPoint
 )
 
 @Dao
@@ -82,9 +84,21 @@ class UriConverters {
     }
 }
 
+class CoordsConverter {
+    @TypeConverter
+    fun fromGeopointToString(point: GeoPoint): String {
+        return point.toString()
+    }
 
-@Database(entities = [Camera::class], version = 1)
-@TypeConverters(UriConverters::class)
+    @TypeConverter
+    fun fromStringToGeopoint(string: String): GeoPoint {
+        return GeoPoint.fromDoubleString(string, ',')
+    }
+}
+
+
+@Database(entities = [Camera::class], version = 2)
+@TypeConverters(UriConverters::class, CoordsConverter::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun cameraDao(): CameraDao
 }
@@ -106,7 +120,7 @@ class MainViewModel(context: Context) : ViewModel() {
     val db = Room.databaseBuilder(
         context.applicationContext,
         AppDatabase::class.java, "database-name"
-    ).build()
+    ).fallbackToDestructiveMigration().build()
 
     private val _cameras: MutableLiveData<MutableList<Camera>> = MutableLiveData(mutableListOf())
 
@@ -122,7 +136,7 @@ class MainViewModel(context: Context) : ViewModel() {
 
     val cameras: MutableLiveData<MutableList<Camera>> = _cameras
     fun addCamera() {
-        val cam = Camera(name = "New camera", uri = URI("https://example.com"))
+        val cam = Camera(name = "New camera", uri = URI("https://example.com"), point = GeoPoint(56.010221, 92.858873))
         _cameras.value?.add(cam)
         _cameras.postValue(_cameras.value)
         viewModelScope.launch(Dispatchers.IO) {

@@ -6,7 +6,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -49,9 +48,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -60,10 +57,16 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.zIndex
 import androidx.media3.common.util.UnstableApi
 import com.andronncollmider.argus.ui.theme.MyApplicationTheme
+import com.utsman.osmandcompose.Marker
+import com.utsman.osmandcompose.OpenStreetMap
+import com.utsman.osmandcompose.rememberCameraState
+import com.utsman.osmandcompose.rememberMarkerState
+import org.osmdroid.util.GeoPoint
 import java.net.URI
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
+
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -77,7 +80,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-const val HOST = "10.0.2.2" //  192.168.31.12 -- localhost machine 10.0.2.2 -- emulator to host
+const val HOST = "lolo-vostro" //  192.168.31.12 -- localhost machine 10.0.2.2 -- emulator to host
 const val WS_ADRESS = "ws://$HOST:3000"
 const val API_URL = "http://$HOST:8080"
 
@@ -112,8 +115,9 @@ fun App(modifier: Modifier = Modifier) {
         CameraEditScreen(
             uri = cams[selectedCamera].uri,
             name = cams[selectedCamera].name,
-            onSave = { name, uri ->
-                cams[selectedCamera] = cams[selectedCamera].copy(name = name, uri = URI(uri))
+            point = cams[selectedCamera].point,
+            onSave = { name, uri, point ->
+                cams[selectedCamera] = cams[selectedCamera].copy(name = name, uri = URI(uri), point = point)
                 viewModel.updateCamera(cams[selectedCamera])
                 showCameraEdit = false
             },
@@ -177,8 +181,7 @@ fun App(modifier: Modifier = Modifier) {
                     Text(
                         text = cams.getOrElse(
                             selectedCamera,
-                            { _ -> Camera(name = "huh", uri = URI("http://example.com")) })?.name
-                            ?: "Argus"
+                            { _ -> Camera(name = "huh", uri = URI("http://example.com"), point = GeoPoint(56.010221, 92.858873)) }).name
                     )
                 },
             )
@@ -238,7 +241,9 @@ fun App(modifier: Modifier = Modifier) {
                     { _ ->
                         Camera(
                             name = "huh",
-                            uri = URI("rtsp://admin:Video2023@109.195.69.236:3393/cam/realmonitor?channel=1&subtype=0")
+                            uri = URI("rtsp://admin:Video2023@109.195.69.236:3393/cam/realmonitor?channel=1&subtype=0"),
+                            point = GeoPoint(56.010221, 92.858873)
+
                         )
                     }).uri.toString(),
                 objects = objects,
@@ -301,21 +306,21 @@ fun App(modifier: Modifier = Modifier) {
                             "Машины",
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                         )
-//                        LazyColumn {
-//                            itemsIndexed(objects!!.toList()) { index, obj ->
-//                                if (viewModel.observedObjects.value?.contains(obj.id) != true) {
-//                                    ObjectListItem(obj.color,
-//                                        selectedObject == index,
-//                                        obj.text,
-//                                        onSelect = { selectedObject = index })
-//                                }
-//                            }
-//                        }
-                        ObjectListItem(
-                            Color.Red,
-                            true,
-                            "Object 1",
-                            onSelect = { })
+                        LazyColumn {
+                            itemsIndexed(objects!!.toList()) { index, obj ->
+                                if (viewModel.observedObjects.value?.contains(obj.id) != true) {
+                                    ObjectListItem(obj.color,
+                                        selectedObject == index,
+                                        obj.text,
+                                        onSelect = { selectedObject = index })
+                                }
+                            }
+                        }
+//                        ObjectListItem(
+//                            Color.Red,
+//                            true,
+//                            "Object 1",
+//                            onSelect = { })
                     }
 
                     2 -> {
@@ -336,16 +341,18 @@ fun App(modifier: Modifier = Modifier) {
 @Composable
 fun CameraEditScreen(
     modifier: Modifier = Modifier,
-    onSave: (name: String, uri: String) -> Unit,
+    onSave: (name: String, uri: String, point: GeoPoint) -> Unit,
     onDelete: () -> Unit,
     onCancel: () -> Unit,
     name: String,
     uri: URI,
+    point: GeoPoint,
 ) {
     val sheetState = rememberModalBottomSheetState()
     var showBottomSheet by remember { mutableStateOf(true) }
     var tempName by remember { mutableStateOf("") }
     var tempURI by remember { mutableStateOf("") }
+    var tempPoint = rememberMarkerState(geoPoint = point)
     tempURI = uri.toString()
     tempName = name
     Scaffold(
@@ -359,14 +366,19 @@ fun CameraEditScreen(
             }
         }
     ) { contentPadding ->
-        Image(
-            painter = painterResource(id = R.drawable.map),
-            contentDescription = "map",
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(contentPadding),
-            contentScale = ContentScale.FillHeight,
-        )
+        var cameraState = rememberCameraState {
+            geoPoint = GeoPoint(56.010221, 92.858873)
+            zoom = 13.0 // optional, default is 5.0
+        }
+
+        // add node
+        OpenStreetMap(
+            modifier = Modifier.fillMaxSize().padding(contentPadding),
+            cameraState = cameraState,
+            onMapLongClick = {point -> tempPoint.geoPoint = point; Log.d("HIII", point.toString())},
+        ) {
+            Marker(state = tempPoint)
+        }
 
         if (showBottomSheet) {
             ModalBottomSheet(
@@ -402,7 +414,7 @@ fun CameraEditScreen(
                         TextButton(onClick = { onCancel() }) { Text("Cancel") }
                         TextButton(onClick = { onDelete() }) { Text("Delete") }
                         Button(onClick = {
-                            onSave(tempName, tempURI)
+                            onSave(tempName, tempURI, tempPoint.geoPoint)
                         }) {
                             Text(
                                 "Save"
